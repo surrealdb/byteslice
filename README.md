@@ -64,3 +64,7 @@ assert!(sub.is_inline());
 ## License
 
 Licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE)).
+
+#### Original
+
+This code is heavily inspired by [byteview](https://crates.io/crates/byteview) by [fjall-rs](https://github.com/fjall-rs), licensed under the Apache License 2.0 and MIT licenses.
