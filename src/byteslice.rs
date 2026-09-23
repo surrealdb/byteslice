@@ -518,3 +518,135 @@ mod tests {
         assert_eq!(orig, deserialized);
     }
 }
+
+#[test]
+fn test_empty_slice_properties() {
+    let empty = ByteSlice::empty();
+    assert_eq!(empty.len(), 0);
+    assert!(empty.is_empty());
+    assert!(empty.is_inline());
+    assert_eq!(empty.prefix(), b"");
+    assert_eq!(&*empty, b"");
+
+    let default_slice = ByteSlice::default();
+    assert_eq!(empty, default_slice);
+
+    let from_empty_str = ByteSlice::from("");
+    assert_eq!(empty, from_empty_str);
+
+    let from_empty_slice = ByteSlice::from_slice(&[]);
+    assert_eq!(empty, from_empty_slice);
+}
+
+#[test]
+fn test_sso_boundary_conditions() {
+    // Exactly 19 bytes (inlined)
+    let b19 = ByteSlice::from("1234567890123456789");
+    assert_eq!(b19.len(), 19);
+    assert!(b19.is_inline());
+
+    // Exactly 20 bytes (inlined on 64-bit)
+    #[cfg(target_pointer_width = "64")]
+    {
+        let b20 = ByteSlice::from("12345678901234567890");
+        assert_eq!(b20.len(), 20);
+        assert!(b20.is_inline());
+    }
+
+    // Exactly 21 bytes (heap allocated on 64-bit)
+    #[cfg(target_pointer_width = "64")]
+    {
+        let b21 = ByteSlice::from("123456789012345678901");
+        assert_eq!(b21.len(), 21);
+        assert!(!b21.is_inline());
+        assert_eq!(b21.prefix(), b"1234");
+    }
+}
+
+#[test]
+fn test_slice_range_variations() {
+    let original = ByteSlice::from("abcdefghijklmnopqrstuvwxyz_0123456789");
+    assert!(!original.is_inline());
+
+    // Unbounded
+    let full = original.slice(..);
+    assert_eq!(full, original);
+
+    // Inclusive start, unbounded end
+    let s1 = original.slice(5..);
+    assert_eq!(&*s1, b"fghijklmnopqrstuvwxyz_0123456789");
+
+    // Unbounded start, excluded end
+    let s2 = original.slice(..10);
+    assert_eq!(&*s2, b"abcdefghij");
+    assert!(s2.is_inline()); // <= 20 bytes downgraded to inline
+
+    // Inclusive start, included end
+    let s3 = original.slice(0..=3);
+    assert_eq!(&*s3, b"abcd");
+    assert!(s3.is_inline());
+
+    // Empty sub-slice
+    let empty = original.slice(10..10);
+    assert_eq!(empty.len(), 0);
+    assert!(empty.is_inline());
+}
+
+#[test]
+#[should_panic(expected = "slice bounds out of range")]
+fn test_slice_out_of_bounds_end() {
+    let s = ByteSlice::from("hello");
+    let _ = s.slice(0..100);
+}
+
+#[test]
+#[should_panic(expected = "slice bounds out of range")]
+#[allow(clippy::reversed_empty_ranges)]
+fn test_slice_start_greater_than_end() {
+    let s = ByteSlice::from("hello");
+    let _ = s.slice(4..2);
+}
+
+#[test]
+fn test_hash_map_and_set_compatibility() {
+    use alloc::collections::BTreeSet;
+
+    let mut set = BTreeSet::new();
+    set.insert(ByteSlice::from("apple"));
+    set.insert(ByteSlice::from("banana"));
+    set.insert(ByteSlice::from(
+        "a_very_long_fruit_name_that_is_heap_allocated",
+    ));
+
+    assert!(set.contains(&ByteSlice::from("apple")));
+    assert!(set.contains(&ByteSlice::from("banana")));
+    assert!(set.contains(&ByteSlice::from(
+        "a_very_long_fruit_name_that_is_heap_allocated"
+    )));
+    assert!(!set.contains(&ByteSlice::from("orange")));
+}
+
+#[test]
+fn test_partial_ord_and_ord_consistency() {
+    let s1 = ByteSlice::from("alpha");
+    let s2 = ByteSlice::from("alphabet");
+    let s3 = ByteSlice::from("beta");
+    let s4 = ByteSlice::from("beta_very_long_string_exceeding_twenty_bytes_allocation");
+
+    assert!(s1 < s2);
+    assert!(s2 < s3);
+    assert!(s3 < s4);
+    assert_eq!(s1.cmp(&s1), core::cmp::Ordering::Equal);
+    assert_eq!(s1.cmp(&s2), core::cmp::Ordering::Less);
+    assert_eq!(s2.cmp(&s1), core::cmp::Ordering::Greater);
+}
+
+#[test]
+fn test_bytes_interoperability() {
+    let raw = b"interoperability test payload across bytes and byteslice";
+    let b = bytes::Bytes::copy_from_slice(raw);
+    let bs = ByteSlice::from(b);
+
+    assert_eq!(&*bs, raw);
+    assert_eq!(bs.prefix(), &raw[..4]);
+}
