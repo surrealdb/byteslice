@@ -1,0 +1,37 @@
+[package]
+name = "byteslice"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.86"
+license = "Apache-2.0"
+readme = "README.md"
+description = "A thin, immutable, zero-copy 24-byte slice with Small String Optimization and prefix-accelerated comparisons"
+repository = "https://github.com/surrealdb/byteslice"
+homepage = "https://surrealdb.com"
+keywords = ["slice", "bytes", "zero-copy", "german-string", "sso"]
+categories = ["data-structures", "memory-management", "no-std::no-alloc"]
+
+[features]
+default = ["std"]
+std = ["bytes?/default", "serde?/std"]
+serde = ["dep:serde"]
+
+[dependencies]
+bytes = { version = "1.11", default-features = false, optional = true }
+serde = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
+
+[dev-dependencies]
+bytes = "1.11"
+serde_json = "1.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+doc_markdown = "allow"
+module_name_repetitions = "allow"
+
+[[bench]]
+name = "slice_bench"
+harness = false
