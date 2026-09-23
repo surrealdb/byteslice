@@ -13,11 +13,11 @@ categories = ["data-structures", "memory-management", "no-std::no-alloc"]
 
 [features]
 default = ["std"]
-std = ["bytes?/default", "serde?/std"]
+std = ["bytes/default", "serde?/std"]
 serde = ["dep:serde"]
 
 [dependencies]
-bytes = { version = "1.11", default-features = false, optional = true }
+bytes = { version = "1.11", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["alloc"], optional = true }
 
 [dev-dependencies]
@@ -26,11 +26,75 @@ serde_json = "1.0"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-must_use_candidate = "allow"
-doc_markdown = "allow"
-module_name_repetitions = "allow"
+
+# Checks for usage of `#[allow]` attribute and suggests replacing it with `#[expect]`.
+allow_attributes = "allow"
+
+# Checks for code like `foo = bar.clone();`.
+assigning_clones = "warn"
+
+# This lint allows boolean comparisons in assert-like macros.
+bool_assert_comparison = "allow"
+
+# Checks for usage of .clone() on a ref-counted pointer.
+clone_on_ref_ptr = "warn"
+
+# Checks for the usage of `as _` conversion using inferred type.
+cloned_instead_of_copied = "warn"
+
+# Checks for function/method calls with a mutable parameter in debug_assert! macros.
+debug_assert_with_mut_call = "warn"
+
+# Checks for explicit `.into_iter()` calls in for loops.
+explicit_into_iter_loop = "warn"
+
+# Checks for impls of `From<..>` that contain `panic!()` or `unwrap()`.
+fallible_impl_from = "warn"
+
+# Checks for usage of `.get().unwrap()`.
+get_unwrap = "warn"
+
+# Checks for the usage of `_.to_owned()`, `vec.to_vec()`, or similar when calling `_.clone()` would be clearer.
+implicit_clone = "warn"
+
+# Checks for usage of `.to_string()` on an `&&T`.
+inefficient_to_string = "warn"
+
+# Checks for large types being passed by value instead of by reference.
+large_types_passed_by_value = "warn"
+
+# Checks for whole number float literals.
+lossy_float_literal = "warn"
+
+# Checks for usage of `.as_ref().cloned()` and suggests `.cloned()` instead.
+option_as_ref_cloned = "warn"
+
+# Checks for unnecessary calls to `.clone()`.
+redundant_clone = "warn"
+
+# Checks for usage of `.as_ref().as_ref()`.
+ref_option_ref = "warn"
+
+# Checks for usage of `.contains()` followed by `.insert()`.
+set_contains_or_insert = "warn"
+
+# Checks for usage of single-character patterns in match arms.
+single_char_pattern = "warn"
+
+# Checks for trivially copyable types that are passed by reference instead of by value.
+trivially_copy_pass_by_ref = "warn"
+
+# Checks for unnecessary calls to `to_owned()`, `to_string()`.
+unnecessary_to_owned = "warn"
+
+# Checks for usage of Mutex<X> where an atomic will do.
+mutex_atomic = "warn"
+
+# Checks for binding to underscore prefixed variable without side-effects.
+no_effect_underscore_binding = "warn"
+
+# Checks for the use of bindings with a single leading underscore.
+used_underscore_binding = "warn"
 
 [[bench]]
 name = "slice_bench"

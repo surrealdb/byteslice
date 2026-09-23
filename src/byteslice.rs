@@ -1,10 +1,11 @@
 //! Immutable zero-copy byte slice with Small String Optimization (SSO)
 //! and prefix-accelerated comparison (German String design).
 
-use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
-use std::mem::ManuallyDrop;
-use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
+use alloc::alloc::{alloc, dealloc, handle_alloc_error, Layout};
+use alloc::vec::Vec;
+use core::mem::ManuallyDrop;
+use core::ops::Deref;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(target_pointer_width = "64")]
 const INLINE_CAPACITY: usize = 20;
@@ -128,8 +129,8 @@ impl ByteSlice {
             let mut prefix = [0u8; PREFIX_SIZE];
             prefix.copy_from_slice(&src[..PREFIX_SIZE]);
 
-            let header_size = std::mem::size_of::<HeapHeader>();
-            let alignment = std::mem::align_of::<HeapHeader>();
+            let header_size = core::mem::size_of::<HeapHeader>();
+            let alignment = core::mem::align_of::<HeapHeader>();
             let total_size = header_size + src_len;
             let layout = Layout::from_size_align(total_size, alignment).expect("valid layout");
 
@@ -145,7 +146,7 @@ impl ByteSlice {
 
                 // Copy payload after header
                 let payload_ptr = heap_ptr.add(header_size);
-                std::ptr::copy_nonoverlapping(src.as_ptr(), payload_ptr, src_len);
+                core::ptr::copy_nonoverlapping(src.as_ptr(), payload_ptr, src_len);
 
                 Self {
                     repr: ViewRepr {
@@ -176,8 +177,8 @@ impl ByteSlice {
     /// Panics if the slice bounds are invalid or out of range.
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
-        use std::ops::Bound;
+    pub fn slice(&self, range: impl core::ops::RangeBounds<usize>) -> Self {
+        use core::ops::Bound;
 
         let self_len = self.len();
         let begin = match range.start_bound() {
@@ -238,14 +239,14 @@ impl ByteSlice {
             unsafe { &self.repr.short.data[..len] }
         } else {
             unsafe {
-                let header_size = std::mem::size_of::<HeapHeader>();
+                let header_size = core::mem::size_of::<HeapHeader>();
                 let payload_ptr = self
                     .repr
                     .long
                     .heap
                     .add(header_size)
                     .add(self.repr.long.offset as usize);
-                std::slice::from_raw_parts(payload_ptr, len)
+                core::slice::from_raw_parts(payload_ptr, len)
             }
         }
     }
@@ -284,7 +285,7 @@ impl AsRef<[u8]> for ByteSlice {
     }
 }
 
-impl std::borrow::Borrow<[u8]> for ByteSlice {
+impl core::borrow::Borrow<[u8]> for ByteSlice {
     #[inline]
     fn borrow(&self) -> &[u8] {
         self.as_slice()
@@ -307,8 +308,8 @@ impl Drop for ByteSlice {
         let header = self.heap_header();
         if header.ref_count.fetch_sub(1, Ordering::AcqRel) == 1 {
             unsafe {
-                let header_size = std::mem::size_of::<HeapHeader>();
-                let alignment = std::mem::align_of::<HeapHeader>();
+                let header_size = core::mem::size_of::<HeapHeader>();
+                let alignment = core::mem::align_of::<HeapHeader>();
                 let total_size = header_size + self.repr.long.original_len as usize;
                 let layout = Layout::from_size_align(total_size, alignment).expect("valid layout");
                 dealloc(self.repr.long.heap.cast_mut(), layout);
@@ -341,33 +342,33 @@ impl Eq for ByteSlice {}
 
 impl PartialOrd for ByteSlice {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for ByteSlice {
     #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         // Fast path: check prefix ordering first
         let prefix_cmp = self.prefix().cmp(other.prefix());
-        if prefix_cmp != std::cmp::Ordering::Equal {
+        if prefix_cmp != core::cmp::Ordering::Equal {
             return prefix_cmp;
         }
         self.as_slice().cmp(other.as_slice())
     }
 }
 
-impl std::hash::Hash for ByteSlice {
+impl core::hash::Hash for ByteSlice {
     #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.as_slice().hash(state);
     }
 }
 
-impl std::fmt::Debug for ByteSlice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match std::str::from_utf8(self.as_slice()) {
+impl core::fmt::Debug for ByteSlice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match core::str::from_utf8(self.as_slice()) {
             Ok(s) => write!(f, "ByteSlice({s:?})"),
             Err(_) => write!(f, "ByteSlice({:?})", self.as_slice()),
         }
@@ -398,7 +399,7 @@ impl From<Vec<u8>> for ByteSlice {
 impl From<bytes::Bytes> for ByteSlice {
     #[inline]
     fn from(b: bytes::Bytes) -> Self {
-        Self::from_slice(b.as_ref())
+        Self::from_bytes(&b)
     }
 }
 
@@ -423,7 +424,7 @@ impl<'de> serde::Deserialize<'de> for ByteSlice {
         impl<'de> serde::de::Visitor<'de> for ByteSliceVisitor {
             type Value = ByteSlice;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 formatter.write_str("a byte slice")
             }
 
@@ -479,19 +480,16 @@ mod tests {
         assert_eq!(&*s, long_str.as_bytes());
         assert_eq!(s.prefix(), &long_str.as_bytes()[..4]);
 
-        // Slicing long range shares allocation
         let sub_long = s.slice(10..40);
         assert!(!sub_long.is_inline());
         assert_eq!(s.ref_count(), 2);
         assert_eq!(sub_long.len(), 30);
         assert_eq!(&*sub_long, &long_str.as_bytes()[10..40]);
 
-        // Slicing short range automatically downgrades to inline
         let sub_short = s.slice(0..10);
         assert!(sub_short.is_inline());
         assert_eq!(sub_short.len(), 10);
         assert_eq!(&*sub_short, &long_str.as_bytes()[0..10]);
-        // Dropping sub_long decrements ref count
         drop(sub_long);
         assert_eq!(s.ref_count(), 1);
     }
@@ -508,7 +506,7 @@ mod tests {
     #[test]
     fn test_struct_size_is_24_bytes() {
         #[cfg(target_pointer_width = "64")]
-        assert_eq!(std::mem::size_of::<ByteSlice>(), 24);
+        assert_eq!(core::mem::size_of::<ByteSlice>(), 24);
     }
 
     #[cfg(feature = "serde")]
