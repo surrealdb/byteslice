@@ -163,6 +163,12 @@ impl ByteSlice {
         }
     }
 
+    /// Creates a slice from static bytes.
+    #[inline]
+    pub fn from_static(src: &'static [u8]) -> Self {
+        Self::from_slice(src)
+    }
+
     /// Zero-copy wrap of a `bytes::Bytes` buffer without unnecessary reallocation.
     #[inline]
     pub fn from_bytes(b: &bytes::Bytes) -> Self {
@@ -400,6 +406,139 @@ impl From<bytes::Bytes> for ByteSlice {
     #[inline]
     fn from(b: bytes::Bytes) -> Self {
         Self::from_bytes(&b)
+    }
+}
+
+impl PartialEq<bytes::Bytes> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &bytes::Bytes) -> bool {
+        self.as_slice() == other.as_ref()
+    }
+}
+
+impl PartialEq<ByteSlice> for bytes::Bytes {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_ref() == other.as_slice()
+    }
+}
+
+impl PartialEq<Vec<u8>> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl PartialEq<&Vec<u8>> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &&Vec<u8>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl PartialEq<ByteSlice> for Vec<u8> {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl PartialEq<ByteSlice> for &Vec<u8> {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl From<alloc::string::String> for ByteSlice {
+    #[inline]
+    fn from(s: alloc::string::String) -> Self {
+        Self::from_slice(s.as_bytes())
+    }
+}
+
+impl PartialEq<str> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_slice() == other.as_bytes()
+    }
+}
+
+impl PartialEq<&str> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self.as_slice() == other.as_bytes()
+    }
+}
+
+impl PartialEq<ByteSlice> for &str {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_bytes() == other.as_slice()
+    }
+}
+
+impl PartialEq<ByteSlice> for str {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_bytes() == other.as_slice()
+    }
+}
+
+impl PartialEq<[u8]> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &[u8]) -> bool {
+        self.as_slice() == other
+    }
+}
+
+impl PartialEq<&[u8]> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
+impl PartialEq<ByteSlice> for &[u8] {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        *self == other.as_slice()
+    }
+}
+
+impl PartialEq<ByteSlice> for [u8] {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self == other.as_slice()
+    }
+}
+
+impl<const N: usize> PartialEq<[u8; N]> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &[u8; N]) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<const N: usize> PartialEq<&[u8; N]> for ByteSlice {
+    #[inline]
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<const N: usize> PartialEq<ByteSlice> for [u8; N] {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<const N: usize> PartialEq<ByteSlice> for &[u8; N] {
+    #[inline]
+    fn eq(&self, other: &ByteSlice) -> bool {
+        self.as_slice() == other.as_slice()
     }
 }
 
