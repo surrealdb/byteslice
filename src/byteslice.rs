@@ -32,9 +32,9 @@ struct ShortRepr {
 struct LongRepr {
     len: u32,
     prefix: [u8; PREFIX_SIZE],
-    heap: *const u8,
+    data_ptr: *const u8,
     original_len: u32,
-    offset: u32,
+    header_offset: u32,
 }
 
 #[repr(C)]
@@ -153,14 +153,62 @@ impl ByteSlice {
                         long: ManuallyDrop::new(LongRepr {
                             len: src_len as u32,
                             prefix,
-                            heap: heap_ptr,
+                            data_ptr: payload_ptr,
                             original_len: src_len as u32,
-                            offset: 0,
+                            header_offset: header_size as u32,
                         }),
                     },
                 }
             }
         }
+    }
+
+    /// Creates a borrowed, zero-allocation `ByteSlice` view over arbitrary bytes.
+    ///
+    /// # Safety
+    /// The caller must ensure that the returned `ByteSlice` does not outlive `src`.
+    #[inline]
+    pub unsafe fn from_borrowed_unchecked(src: &[u8]) -> Self {
+        let src_len = src.len();
+        if src_len <= INLINE_CAPACITY {
+            let mut data = [0u8; INLINE_CAPACITY];
+            data[..src_len].copy_from_slice(src);
+            Self {
+                repr: ViewRepr {
+                    short: ManuallyDrop::new(ShortRepr {
+                        len: src_len as u32,
+                        data,
+                    }),
+                },
+            }
+        } else {
+            let mut prefix = [0u8; PREFIX_SIZE];
+            prefix.copy_from_slice(&src[..PREFIX_SIZE]);
+            Self {
+                repr: ViewRepr {
+                    long: ManuallyDrop::new(LongRepr {
+                        len: src_len as u32,
+                        prefix,
+                        data_ptr: src.as_ptr(),
+                        original_len: 0,
+                        header_offset: 0,
+                    }),
+                },
+            }
+        }
+    }
+
+    /// Executes a closure with a borrowed, zero-allocation `ByteSlice` view over arbitrary bytes.
+    ///
+    /// This is 100% memory safe because the `&ByteSlice` reference is scoped to the closure
+    /// and cannot outlive `src`.
+    #[inline]
+    pub fn with_borrowed<F, R>(src: &[u8], f: F) -> R
+    where
+        F: FnOnce(&ByteSlice) -> R,
+    {
+        let view = unsafe { Self::from_borrowed_unchecked(src) };
+        f(&view)
     }
 
     /// Creates a slice from static bytes.
@@ -216,7 +264,7 @@ impl ByteSlice {
         } else {
             // Subslice is long: share heap allocation with incremented atomic ref_count
             let heap_header = self.heap_header();
-            heap_header.ref_count.fetch_add(1, Ordering::Release);
+            heap_header.ref_count.fetch_add(1, Ordering::Relaxed);
 
             let mut prefix = [0u8; PREFIX_SIZE];
             let sub_bytes = &self.as_slice()[begin..end];
@@ -228,9 +276,9 @@ impl ByteSlice {
                         long: ManuallyDrop::new(LongRepr {
                             len: sub_len as u32,
                             prefix,
-                            heap: self.repr.long.heap,
+                            data_ptr: self.repr.long.data_ptr.add(begin),
                             original_len: self.repr.long.original_len,
-                            offset: self.repr.long.offset + begin as u32,
+                            header_offset: self.repr.long.header_offset + begin as u32,
                         }),
                     },
                 }
@@ -238,36 +286,29 @@ impl ByteSlice {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         let len = self.len();
         if self.is_inline() {
             unsafe { &self.repr.short.data[..len] }
         } else {
-            unsafe {
-                let header_size = core::mem::size_of::<HeapHeader>();
-                let payload_ptr = self
-                    .repr
-                    .long
-                    .heap
-                    .add(header_size)
-                    .add(self.repr.long.offset as usize);
-                core::slice::from_raw_parts(payload_ptr, len)
-            }
+            unsafe { core::slice::from_raw_parts(self.repr.long.data_ptr, len) }
         }
     }
 
     fn heap_header(&self) -> &HeapHeader {
-        debug_assert!(!self.is_inline());
+        debug_assert!(!self.is_inline() && unsafe { self.repr.long.header_offset != 0 });
         unsafe {
-            let ptr: *const HeapHeader = self.repr.long.heap.cast();
-            &*ptr
+            let header_ptr = (self.repr.long.data_ptr as *const u8)
+                .sub(self.repr.long.header_offset as usize)
+                .cast::<HeapHeader>();
+            &*header_ptr
         }
     }
 
     /// Returns current reference count (1 for inlined data).
     pub fn ref_count(&self) -> u64 {
-        if self.is_inline() {
+        if self.is_inline() || unsafe { self.repr.long.header_offset == 0 } {
             1
         } else {
             self.heap_header().ref_count.load(Ordering::Acquire)
@@ -301,13 +342,39 @@ impl core::borrow::Borrow<[u8]> for ByteSlice {
 impl Clone for ByteSlice {
     #[inline]
     fn clone(&self) -> Self {
-        self.slice(..)
+        if self.is_inline() {
+            unsafe {
+                Self {
+                    repr: ViewRepr {
+                        short: self.repr.short,
+                    },
+                }
+            }
+        } else if unsafe { self.repr.long.header_offset == 0 } {
+            // Borrowed slice view: copy view representation directly without atomic refcount
+            unsafe {
+                Self {
+                    repr: ViewRepr {
+                        long: self.repr.long,
+                    },
+                }
+            }
+        } else {
+            self.heap_header().ref_count.fetch_add(1, Ordering::Relaxed);
+            unsafe {
+                Self {
+                    repr: ViewRepr {
+                        long: self.repr.long,
+                    },
+                }
+            }
+        }
     }
 }
 
 impl Drop for ByteSlice {
     fn drop(&mut self) {
-        if self.is_inline() {
+        if self.is_inline() || unsafe { self.repr.long.header_offset == 0 } {
             return;
         }
 
@@ -318,7 +385,9 @@ impl Drop for ByteSlice {
                 let alignment = core::mem::align_of::<HeapHeader>();
                 let total_size = header_size + self.repr.long.original_len as usize;
                 let layout = Layout::from_size_align(total_size, alignment).expect("valid layout");
-                dealloc(self.repr.long.heap.cast_mut(), layout);
+                let heap_ptr = (self.repr.long.data_ptr as *mut u8)
+                    .sub(self.repr.long.header_offset as usize);
+                dealloc(heap_ptr, layout);
             }
         }
     }
@@ -593,6 +662,22 @@ impl<'de> serde::Deserialize<'de> for ByteSlice {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_borrowed_unchecked_view() {
+        let long_data = b"a_very_long_byte_slice_that_exceeds_inline_capacity_and_is_borrowed!";
+        let view = unsafe { ByteSlice::from_borrowed_unchecked(&long_data[..]) };
+        assert_eq!(view.len(), long_data.len());
+        assert_eq!(view.as_slice(), &long_data[..]);
+        assert_eq!(view.ref_count(), 1);
+
+        let owned = ByteSlice::from(&long_data[..]);
+        assert_eq!(view, owned);
+        assert_eq!(view.cmp(&owned), core::cmp::Ordering::Equal);
+
+        let cloned = view.clone();
+        assert_eq!(cloned.as_slice(), &long_data[..]);
+    }
 
     #[test]
     fn test_short_inline_slice() {
