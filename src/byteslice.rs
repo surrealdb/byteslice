@@ -307,7 +307,10 @@ impl ByteSlice {
     fn heap_header(&self) -> &HeapHeader {
         debug_assert!(!self.is_inline() && unsafe { self.repr.long.header_offset != 0 });
         unsafe {
-            let header_ptr = (self.repr.long.data_ptr as *const u8)
+            let header_ptr = self
+                .repr
+                .long
+                .data_ptr
                 .sub(self.repr.long.header_offset as usize)
                 .cast::<HeapHeader>();
             &*header_ptr
@@ -393,8 +396,8 @@ impl Drop for ByteSlice {
                 let alignment = core::mem::align_of::<HeapHeader>();
                 let total_size = header_size + self.repr.long.original_len as usize;
                 let layout = Layout::from_size_align(total_size, alignment).expect("valid layout");
-                let heap_ptr = (self.repr.long.data_ptr as *mut u8)
-                    .sub(self.repr.long.header_offset as usize);
+                let heap_ptr =
+                    (self.repr.long.data_ptr as *mut u8).sub(self.repr.long.header_offset as usize);
                 dealloc(heap_ptr, layout);
             }
         }
@@ -686,6 +689,7 @@ mod tests {
 
         let cloned = view.clone();
         assert_eq!(cloned.as_slice(), &long_data[..]);
+        assert_eq!(cloned, view);
     }
 
     #[test]
