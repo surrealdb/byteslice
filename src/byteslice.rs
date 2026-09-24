@@ -100,6 +100,14 @@ impl ByteSlice {
         unsafe { &self.repr.short.data[..prefix_len] }
     }
 
+    #[inline(always)]
+    fn prefix_u32(&self) -> u32 {
+        unsafe {
+            let ptr = (self as *const Self as *const u8).add(4).cast::<u32>();
+            u32::from_be(ptr.read_unaligned())
+        }
+    }
+
     /// Creates a new slice from an existing byte slice.
     /// Inlines values <= 20 bytes with zero allocations.
     ///
@@ -405,7 +413,7 @@ impl PartialEq for ByteSlice {
         }
 
         // Fast path: compare 4-byte prefixes before dereferencing heap pointers
-        if self.prefix() != other.prefix() {
+        if self.prefix_u32() != other.prefix_u32() {
             return false;
         }
 
@@ -423,12 +431,13 @@ impl PartialOrd for ByteSlice {
 }
 
 impl Ord for ByteSlice {
-    #[inline]
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        // Fast path: check prefix ordering first
-        let prefix_cmp = self.prefix().cmp(other.prefix());
-        if prefix_cmp != core::cmp::Ordering::Equal {
-            return prefix_cmp;
+        // Fast path: check 32-bit big-endian prefix ordering first in a single CPU register instruction
+        let p_self = self.prefix_u32();
+        let p_other = other.prefix_u32();
+        if p_self != p_other {
+            return p_self.cmp(&p_other);
         }
         self.as_slice().cmp(other.as_slice())
     }
