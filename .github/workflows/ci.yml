@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -63,3 +66,34 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  miri:
+    # Borrowed views point into caller memory, so every path that could let
+    # one escape its borrow is checked for undefined behaviour. Release mode
+    # is included because it removes debug assertions.
+    name: Miri (${{ matrix.borrows }} borrows, ${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        borrows: [stacked, tree]
+        profile: [debug, release]
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+        with:
+          toolchain: nightly-2026-09-24
+          components: miri
+
+      - name: Run tests under Miri (all features)
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance ${{ matrix.borrows == 'tree' && '-Zmiri-tree-borrows' || '' }}
+        run: cargo miri test --all-features ${{ matrix.profile == 'release' && '--release' || '' }}
+
+      - name: Run tests under Miri (no default features)
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance ${{ matrix.borrows == 'tree' && '-Zmiri-tree-borrows' || '' }}
+        run: cargo miri test --no-default-features ${{ matrix.profile == 'release' && '--release' || '' }}
